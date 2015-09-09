@@ -307,6 +307,25 @@ static void create_worker(void *(*func)(void *), void *arg) {
 
     pthread_attr_init(&attr);
 
+    static int current_cpu = -1;
+    int max_cpus = 8 * sizeof(cpu_set_t);
+    cpu_set_t m;
+    CPU_ZERO(&m);
+    sched_getaffinity(0, sizeof(cpu_set_t), &m);
+    for (int i = 0; i < max_cpus; ++i) {
+        int c = (current_cpu + i + 1) % max_cpus;
+        if (CPU_ISSET(c, &m)) {
+            CPU_ZERO(&m);
+            CPU_SET(c, &m);
+            int ret;
+            if ((ret = pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &m))) {
+                fprintf(stderr, "Can't set thread affinity: %s\n", strerror(ret));
+                exit(1);
+            }
+            current_cpu = c;
+            break;
+        }
+    }
     if ((ret = pthread_create(&thread, &attr, func, arg)) != 0) {
         fprintf(stderr, "Can't create thread: %s\n",
                 strerror(ret));
@@ -801,4 +820,3 @@ void memcached_thread_init(int nthreads, struct event_base *main_base) {
     wait_for_thread_registration(nthreads);
     pthread_mutex_unlock(&init_lock);
 }
-
